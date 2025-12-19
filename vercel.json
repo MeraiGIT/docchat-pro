@@ -1,0 +1,8 @@
+{
+  "functions": {
+    "api/process-document.py": {
+      "runtime": "python3.9"
+    }
+  }
+}
+
