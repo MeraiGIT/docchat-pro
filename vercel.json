@@ -1,8 +1,7 @@
 {
   "functions": {
     "api/process-document.py": {
-      "runtime": "@vercel/python@3.9"
+      "runtime": "python@3.9"
     }
   }
 }
-
