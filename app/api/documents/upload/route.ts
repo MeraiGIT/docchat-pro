@@ -107,14 +107,41 @@ export async function POST(request: NextRequest) {
 
     const { chunks, metadata } = processResult
 
-    // Generate embeddings for chunks
+    // Generate embeddings for chunks in batches to avoid rate limits
     try {
       const { generateEmbedding } = await import('@/lib/openai')
-      const embeddings = await Promise.all(
-        chunks.map((chunk: string) => generateEmbedding(chunk))
-      )
+      const embeddings: number[][] = []
+      const EMBEDDING_BATCH_SIZE = 10 // Process 10 embeddings at a time
+      
+      for (let i = 0; i < chunks.length; i += EMBEDDING_BATCH_SIZE) {
+        const batch = chunks.slice(i, i + EMBEDDING_BATCH_SIZE)
+        const batchEmbeddings = await Promise.all(
+          batch.map((chunk: string) => generateEmbedding(chunk))
+        )
+        embeddings.push(...batchEmbeddings)
+        
+        // Small delay between batches to avoid rate limiting
+        if (i + EMBEDDING_BATCH_SIZE < chunks.length) {
+          await new Promise(resolve => setTimeout(resolve, 100))
+        }
+      }
+      
+      if (embeddings.length !== chunks.length) {
+        throw new Error(`Embedding count mismatch: expected ${chunks.length}, got ${embeddings.length}`)
+      }
 
       const supabase = createServiceRoleSupabase()
+
+      // Verify document_chunks table exists by attempting a simple query
+      const { error: tableCheckError } = await supabase
+        .from('document_chunks')
+        .select('id')
+        .limit(1)
+      
+      if (tableCheckError && !tableCheckError.message?.includes('does not exist')) {
+        // If it's not a "table doesn't exist" error, log it but continue
+        console.warn('Warning checking document_chunks table:', tableCheckError.message)
+      }
 
       // Create document record
       // Try with chunk_count first, fallback without it if column doesn't exist
@@ -171,40 +198,70 @@ export async function POST(request: NextRequest) {
         )
       }
 
-      // Store chunks with embeddings
+      // Validate embeddings before inserting
+      if (embeddings.length !== chunks.length) {
+        throw new Error(`Embedding count mismatch: expected ${chunks.length}, got ${embeddings.length}`)
+      }
+      
+      // Validate embedding dimensions (should be 1536 for text-embedding-3-small)
+      const expectedDimension = 1536
+      for (let i = 0; i < embeddings.length; i++) {
+        if (!Array.isArray(embeddings[i])) {
+          throw new Error(`Embedding at index ${i} is not an array`)
+        }
+        if (embeddings[i].length !== expectedDimension) {
+          throw new Error(`Embedding at index ${i} has wrong dimension: expected ${expectedDimension}, got ${embeddings[i].length}`)
+        }
+      }
+
+      // Store chunks with embeddings in batches to avoid size limits
+      const BATCH_SIZE = 50 // Insert 50 chunks at a time
       const chunkInserts = chunks.map((chunk: string, index: number) => ({
         document_id: document.id,
         content: chunk,
-        embedding: embeddings[index],
+        embedding: embeddings[index], // Supabase JS client handles number[] for vector type
         chunk_index: index,
       }))
 
-      const { error: chunksError } = await supabase
-        .from('document_chunks')
-        .insert(chunkInserts)
+      // Insert chunks in batches
+      for (let i = 0; i < chunkInserts.length; i += BATCH_SIZE) {
+        const batch = chunkInserts.slice(i, i + BATCH_SIZE)
+        const { error: batchError } = await supabase
+          .from('document_chunks')
+          .insert(batch)
 
-      if (chunksError) {
-        console.error('Error inserting chunks:', {
-          error: chunksError,
-          message: chunksError?.message,
-          code: chunksError?.code,
-          documentId: document.id,
-          chunkCount: chunks.length,
-        })
-        // Clean up document if chunks fail
-        try {
-          await supabase.from('documents').delete().eq('id', document.id)
-        } catch (cleanupError) {
-          console.error('Error cleaning up document:', cleanupError)
+        if (batchError) {
+          console.error('Error inserting chunk batch:', {
+            error: batchError,
+            message: batchError?.message,
+            code: batchError?.code,
+            details: batchError?.details,
+            hint: batchError?.hint,
+            documentId: document.id,
+            batchIndex: i,
+            batchSize: batch.length,
+            totalChunks: chunks.length,
+          })
+          
+          // Clean up document if chunks fail
+          try {
+            await supabase.from('documents').delete().eq('id', document.id)
+            // Also clean up any chunks that were successfully inserted
+            await supabase.from('document_chunks').delete().eq('document_id', document.id)
+          } catch (cleanupError) {
+            console.error('Error cleaning up document:', cleanupError)
+          }
+          
+          return NextResponse.json(
+            { 
+              error: 'Failed to store document chunks',
+              details: batchError?.message || batchError?.hint || 'Unknown error storing chunks',
+              code: 'CHUNKS_ERROR',
+              batchIndex: i,
+            },
+            { status: 500 }
+          )
         }
-        return NextResponse.json(
-          { 
-            error: 'Failed to store document chunks',
-            details: chunksError?.message || 'Unknown error storing chunks',
-            code: 'CHUNKS_ERROR',
-          },
-          { status: 500 }
-        )
       }
 
       return NextResponse.json({
