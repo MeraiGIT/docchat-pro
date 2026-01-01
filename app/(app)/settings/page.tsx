@@ -64,7 +64,7 @@ export default function SettingsPage() {
 
   const loadUsageData = async () => {
     try {
-      const response = await fetch('/api/auth/session')
+      const response = await fetch('/api/user/data')
       if (response.ok) {
         const data = await response.json()
         if (data.usage) {

@@ -61,7 +61,7 @@ export function ChatInterface({
 
   const checkLimit = async () => {
     try {
-      const response = await fetch('/api/auth/session')
+      const response = await fetch('/api/user/data')
       if (response.ok) {
         const data = await response.json()
         if (data.user && data.usage) {

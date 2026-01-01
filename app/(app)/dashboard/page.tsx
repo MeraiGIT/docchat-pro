@@ -50,7 +50,7 @@ export default function DashboardPage() {
       }
 
       // Fetch usage stats
-      const usageRes = await fetch('/api/auth/session')
+      const usageRes = await fetch('/api/user/data')
       if (usageRes.ok) {
         const usageData = await usageRes.json()
         if (usageData.usage) {

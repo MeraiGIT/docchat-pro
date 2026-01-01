@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
-import { authOptions } from '../[...nextauth]/route'
+import { authOptions } from '@/app/api/auth/[...nextauth]/route'
 import { createServerSupabase, createServiceRoleSupabase } from '@/lib/supabase'
 import { getUserUsage } from '@/lib/rate-limit'
 

@@ -75,44 +75,40 @@ export async function POST(request: NextRequest) {
     const uint8Array = new Uint8Array(arrayBuffer)
     const buffer = Buffer.from(uint8Array)
 
-    // Process document - use Python function in production, Node.js in development
+    // Process document - use Node.js function (Python functions have deployment issues)
+    // TODO: Re-enable Python function once Vercel Python runtime is stable
+    let processResult: any
     try {
-      let processResult: any
-      
-      // In production, use Python serverless function via HTTP
-      // In development, use Node.js function directly (Python functions don't work locally)
-      if (process.env.NODE_ENV === 'production') {
-        const baseUrl = process.env.NEXT_PUBLIC_APP_URL || process.env.NEXTAUTH_URL || request.nextUrl.origin
-        const processUrl = `${baseUrl}/api/process-document?filename=${encodeURIComponent(file.name)}`
-        
-        const processResponse = await fetch(processUrl, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/octet-stream',
-            'x-filename': file.name,
-          },
-          body: buffer,
-        })
+      const { processDocument } = await import('@/app/api/process-document/route')
+      processResult = await processDocument(buffer, file.name)
+    } catch (processError) {
+      console.error('Error processing document:', processError)
+      return NextResponse.json(
+        {
+          error:
+            processError instanceof Error
+              ? processError.message
+              : 'Failed to process document. Please try again or contact support.',
+          code: 'PROCESSING_ERROR',
+        },
+        { status: 500 }
+      )
+    }
 
-        if (!processResponse.ok) {
-          const errorData = await processResponse.json().catch(() => ({ error: 'Failed to process document' }))
-          throw new Error(errorData.error || 'Failed to process document with Python function')
-        }
+    if (!processResult.success || !processResult.chunks) {
+      return NextResponse.json(
+        {
+          error: processResult.error || 'Document processing failed',
+          code: 'PROCESSING_FAILED',
+        },
+        { status: 500 }
+      )
+    }
 
-        processResult = await processResponse.json()
-      } else {
-        // Local development: use Node.js function directly
-        const { processDocument } = await import('@/app/api/process-document/route')
-        processResult = await processDocument(buffer, file.name)
-      }
+    const { chunks, metadata } = processResult
 
-      if (!processResult.success || !processResult.chunks) {
-        throw new Error(processResult.error || 'Document processing failed')
-      }
-
-      const { chunks, metadata } = processResult
-
-      // Generate embeddings for chunks
+    // Generate embeddings for chunks
+    try {
       const { generateEmbedding } = await import('@/lib/openai')
       const embeddings = await Promise.all(
         chunks.map((chunk: string) => generateEmbedding(chunk))
@@ -159,9 +155,18 @@ export async function POST(request: NextRequest) {
       }
 
       if (insertError || !document) {
-        console.error('Error creating document:', insertError)
+        console.error('Error creating document:', {
+          error: insertError,
+          message: insertError?.message,
+          code: insertError?.code,
+          details: insertError?.details,
+        })
         return NextResponse.json(
-          { error: 'Failed to create document', details: insertError?.message },
+          { 
+            error: 'Failed to create document in database',
+            details: insertError?.message || 'Unknown database error',
+            code: 'DATABASE_ERROR',
+          },
           { status: 500 }
         )
       }
@@ -179,11 +184,25 @@ export async function POST(request: NextRequest) {
         .insert(chunkInserts)
 
       if (chunksError) {
-        console.error('Error inserting chunks:', chunksError)
+        console.error('Error inserting chunks:', {
+          error: chunksError,
+          message: chunksError?.message,
+          code: chunksError?.code,
+          documentId: document.id,
+          chunkCount: chunks.length,
+        })
         // Clean up document if chunks fail
-        await supabase.from('documents').delete().eq('id', document.id)
+        try {
+          await supabase.from('documents').delete().eq('id', document.id)
+        } catch (cleanupError) {
+          console.error('Error cleaning up document:', cleanupError)
+        }
         return NextResponse.json(
-          { error: 'Failed to store document chunks' },
+          { 
+            error: 'Failed to store document chunks',
+            details: chunksError?.message || 'Unknown error storing chunks',
+            code: 'CHUNKS_ERROR',
+          },
           { status: 500 }
         )
       }
@@ -199,13 +218,14 @@ export async function POST(request: NextRequest) {
         message: 'Document uploaded and processed successfully.',
       })
     } catch (error) {
-      console.error('Error processing document:', error)
+      console.error('Error in document upload workflow:', error)
       return NextResponse.json(
         {
           error:
             error instanceof Error
               ? error.message
-              : 'Failed to process document',
+              : 'Failed to complete document upload',
+          code: 'UPLOAD_ERROR',
         },
         { status: 500 }
       )
