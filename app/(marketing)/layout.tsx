@@ -14,10 +14,13 @@ export default function MarketingLayout({
 }: {
   children: React.ReactNode
 }) {
-  const { data: session } = useSession()
+  const { data: session, status } = useSession()
   const [scrolled, setScrolled] = useState(false)
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
   const pathname = usePathname()
+  
+  // Don't render navigation until session is loaded
+  const isLoading = status === 'loading'
 
   useEffect(() => {
     const handleScroll = () => {
@@ -60,7 +63,9 @@ export default function MarketingLayout({
               </Link>
             ))}
             <div className="flex items-center gap-4">
-              {session ? (
+              {isLoading ? (
+                <div className="h-8 w-8 animate-pulse rounded bg-zinc-800" />
+              ) : session?.user ? (
                 <>
                   <Link href="/dashboard">
                     <Button variant="ghost" size="sm">

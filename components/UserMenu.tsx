@@ -14,12 +14,17 @@ import { Button } from '@/components/ui/button'
 interface UserMenuProps {
   user: {
     name?: string | null
-    email: string
+    email?: string | null
   }
 }
 
 export function UserMenu({ user }: UserMenuProps) {
   const router = useRouter()
+
+  // Defensive check - ensure user exists
+  if (!user || (!user.email && !user.name)) {
+    return null
+  }
 
   const handleSignOut = async () => {
     await signOut({ redirect: false })
@@ -27,12 +32,14 @@ export function UserMenu({ user }: UserMenuProps) {
     router.refresh()
   }
 
+  const displayName = user.name || user.email || 'User'
+
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
         <Button variant="ghost" size="sm" className="flex items-center gap-2">
           <User className="h-4 w-4" />
-          <span className="hidden sm:inline">{user.name || user.email}</span>
+          <span className="hidden sm:inline">{displayName}</span>
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="w-48">

@@ -26,6 +26,7 @@ declare module 'next-auth/jwt' {
     id: string
     email: string
     subscription_tier: 'free' | 'pro'
+    name?: string | null
   }
 }
 
@@ -117,15 +118,28 @@ const authOptions: NextAuthOptions = {
         token.id = user.id
         token.email = user.email
         token.subscription_tier = user.subscription_tier
+        token.name = user.name
       }
       return token
     },
     async session({ session, token }) {
-      if (session.user && token) {
+      // Ensure session.user is always an object
+      if (!session.user) {
+        session.user = {
+          id: '',
+          email: '',
+          subscription_tier: 'free',
+          name: null,
+        }
+      }
+      
+      if (token) {
         session.user.id = token.id as string
         session.user.email = token.email as string
         session.user.subscription_tier = token.subscription_tier as 'free' | 'pro'
+        session.user.name = token.name ?? null
       }
+      
       return session
     },
     async redirect({ url, baseUrl }) {
