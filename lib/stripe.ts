@@ -1,23 +1,35 @@
 import Stripe from 'stripe'
 
-// Environment variable validation
-const stripeSecretKey = process.env.STRIPE_SECRET_KEY
-const stripePublishableKey = process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY
+// Lazy initialization of Stripe client (only when actually used)
+let stripeInstance: Stripe | null = null
 
-if (!stripeSecretKey) {
-  throw new Error('Missing STRIPE_SECRET_KEY environment variable')
-}
+function getStripe(): Stripe {
+  if (stripeInstance) {
+    return stripeInstance
+  }
 
-if (!stripePublishableKey) {
-  throw new Error('Missing NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY environment variable')
+  const stripeSecretKey = process.env.STRIPE_SECRET_KEY
+  if (!stripeSecretKey) {
+    throw new Error('Missing STRIPE_SECRET_KEY environment variable')
+  }
+
+  stripeInstance = new Stripe(stripeSecretKey, {
+    apiVersion: '2025-12-15.clover',
+    typescript: true,
+  })
+
+  return stripeInstance
 }
 
 /**
- * Initialize Stripe client
+ * Initialize Stripe client (lazy-loaded)
  */
-export const stripe = new Stripe(stripeSecretKey, {
-  apiVersion: '2025-12-15.clover',
-  typescript: true,
+export const stripe = new Proxy({} as Stripe, {
+  get(_target, prop) {
+    const instance = getStripe()
+    const value = (instance as any)[prop]
+    return typeof value === 'function' ? value.bind(instance) : value
+  },
 })
 
 /**

@@ -1,30 +1,64 @@
 import OpenAI from 'openai'
 import Anthropic from '@anthropic-ai/sdk'
 
-// Environment variable validation
-const openaiApiKey = process.env.OPENAI_API_KEY
-const anthropicApiKey = process.env.ANTHROPIC_API_KEY
+// Lazy initialization of clients (only when actually used)
+let openaiInstance: OpenAI | null = null
+let anthropicInstance: Anthropic | null = null
 
-if (!openaiApiKey) {
-  throw new Error('Missing OPENAI_API_KEY environment variable (required for embeddings)')
+function getOpenAI(): OpenAI {
+  if (openaiInstance) {
+    return openaiInstance
+  }
+
+  const openaiApiKey = process.env.OPENAI_API_KEY
+  if (!openaiApiKey) {
+    throw new Error('Missing OPENAI_API_KEY environment variable (required for embeddings)')
+  }
+
+  openaiInstance = new OpenAI({
+    apiKey: openaiApiKey,
+  })
+
+  return openaiInstance
 }
 
-if (!anthropicApiKey) {
-  throw new Error('Missing ANTHROPIC_API_KEY environment variable (required for chat)')
+function getAnthropic(): Anthropic {
+  if (anthropicInstance) {
+    return anthropicInstance
+  }
+
+  const anthropicApiKey = process.env.ANTHROPIC_API_KEY
+  if (!anthropicApiKey) {
+    throw new Error('Missing ANTHROPIC_API_KEY environment variable (required for chat)')
+  }
+
+  anthropicInstance = new Anthropic({
+    apiKey: anthropicApiKey,
+  })
+
+  return anthropicInstance
 }
 
 /**
- * Initialize OpenAI client (used for embeddings)
+ * Initialize OpenAI client (used for embeddings) - lazy-loaded
  */
-export const openai = new OpenAI({
-  apiKey: openaiApiKey,
+export const openai = new Proxy({} as OpenAI, {
+  get(_target, prop) {
+    const instance = getOpenAI()
+    const value = (instance as any)[prop]
+    return typeof value === 'function' ? value.bind(instance) : value
+  },
 })
 
 /**
- * Initialize Anthropic client (used for chat)
+ * Initialize Anthropic client (used for chat) - lazy-loaded
  */
-export const anthropic = new Anthropic({
-  apiKey: anthropicApiKey,
+export const anthropic = new Proxy({} as Anthropic, {
+  get(_target, prop) {
+    const instance = getAnthropic()
+    const value = (instance as any)[prop]
+    return typeof value === 'function' ? value.bind(instance) : value
+  },
 })
 
 /**

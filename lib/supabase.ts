@@ -51,21 +51,25 @@ export type Usage = {
   period_end: string
 }
 
-// Environment variable validation
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
-const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
-const supabaseServiceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY
+// Lazy environment variable validation (only when functions are called)
+function getSupabaseConfig() {
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
+  const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
+  const supabaseServiceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY
 
-if (!supabaseUrl) {
-  throw new Error('Missing NEXT_PUBLIC_SUPABASE_URL environment variable')
-}
+  if (!supabaseUrl) {
+    throw new Error('Missing NEXT_PUBLIC_SUPABASE_URL environment variable')
+  }
 
-if (!supabaseAnonKey) {
-  throw new Error('Missing NEXT_PUBLIC_SUPABASE_ANON_KEY environment variable')
-}
+  if (!supabaseAnonKey) {
+    throw new Error('Missing NEXT_PUBLIC_SUPABASE_ANON_KEY environment variable')
+  }
 
-if (!supabaseServiceRoleKey) {
-  throw new Error('Missing SUPABASE_SERVICE_ROLE_KEY environment variable')
+  if (!supabaseServiceRoleKey) {
+    throw new Error('Missing SUPABASE_SERVICE_ROLE_KEY environment variable')
+  }
+
+  return { supabaseUrl, supabaseAnonKey, supabaseServiceRoleKey }
 }
 
 /**
@@ -73,8 +77,8 @@ if (!supabaseServiceRoleKey) {
  * Use this in Client Components and browser-side code
  */
 export function createClientSupabase() {
-  // TypeScript knows these are defined due to the runtime checks above
-  return createClient(supabaseUrl!, supabaseAnonKey!)
+  const { supabaseUrl, supabaseAnonKey } = getSupabaseConfig()
+  return createClient(supabaseUrl, supabaseAnonKey)
 }
 
 /**
@@ -84,8 +88,9 @@ export function createClientSupabase() {
  */
 export async function createServerSupabase() {
   const cookieStore = await cookies()
+  const { supabaseUrl, supabaseAnonKey } = getSupabaseConfig()
   
-  return createServerClient(supabaseUrl!, supabaseAnonKey!, {
+  return createServerClient(supabaseUrl, supabaseAnonKey, {
     cookies: {
       getAll() {
         return cookieStore.getAll()
@@ -111,7 +116,8 @@ export async function createServerSupabase() {
  * WARNING: Only use in secure server-side contexts, never expose to client
  */
 export function createServiceRoleSupabase() {
-  return createClient(supabaseUrl!, supabaseServiceRoleKey!, {
+  const { supabaseUrl, supabaseServiceRoleKey } = getSupabaseConfig()
+  return createClient(supabaseUrl, supabaseServiceRoleKey, {
     auth: {
       autoRefreshToken: false,
       persistSession: false,

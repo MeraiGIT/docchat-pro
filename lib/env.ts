@@ -50,10 +50,9 @@ function validateEnvVars() {
   }
 }
 
-// Validate on module load (only in production or when explicitly checking)
-if (process.env.NODE_ENV === 'production' || process.env.VALIDATE_ENV === 'true') {
-  validateEnvVars()
-}
+// Don't validate on module load - only validate when explicitly called
+// This prevents build failures when env vars aren't set yet
+// Call validateEnvironment() explicitly if you need to validate
 
 /**
  * Type-safe environment variable access
