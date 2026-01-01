@@ -4,13 +4,6 @@ import Stripe from 'stripe'
 import { stripe } from '@/lib/stripe'
 import { createServiceRoleSupabase } from '@/lib/supabase'
 
-// Get webhook secret from environment
-const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET
-
-if (!webhookSecret) {
-  throw new Error('Missing STRIPE_WEBHOOK_SECRET environment variable')
-}
-
 /**
  * Handle Stripe Webhooks
  * 
@@ -26,6 +19,17 @@ if (!webhookSecret) {
  * - invoice.payment_failed → Mark as past_due
  */
 export async function POST(request: NextRequest) {
+  // Get webhook secret from environment (check at runtime, not build time)
+  const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET
+
+  if (!webhookSecret) {
+    console.error('STRIPE_WEBHOOK_SECRET is not configured')
+    return NextResponse.json(
+      { error: 'Webhook secret not configured' },
+      { status: 500 }
+    )
+  }
+
   const body = await request.text()
   const headersList = await headers()
   const signature = headersList.get('stripe-signature')
@@ -41,9 +45,6 @@ export async function POST(request: NextRequest) {
 
   try {
     // Verify webhook signature
-    if (!webhookSecret) {
-      throw new Error('STRIPE_WEBHOOK_SECRET is not configured')
-    }
     event = stripe.webhooks.constructEvent(body, signature, webhookSecret)
   } catch (err) {
     console.error('Webhook signature verification failed:', err)
